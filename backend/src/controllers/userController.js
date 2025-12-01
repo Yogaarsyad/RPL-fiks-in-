@@ -91,6 +91,10 @@ const login = async (req, res) => {
             });
         }
 
+        // Get complete profile data including avatar, bio, etc
+        const ProfileModel = require('../models/userProfileModel');
+        const profileData = await ProfileModel.getProfileByUserId(user.id);
+
         // Generate token (Payload digabung: ID + Role)
         const token = jwt.sign(
             { 
@@ -107,7 +111,7 @@ const login = async (req, res) => {
             success: true,
             message: 'Login successful',
             token,
-            user: {
+            user: profileData || {
                 id: user.id,
                 nama: user.nama,
                 email: user.email,

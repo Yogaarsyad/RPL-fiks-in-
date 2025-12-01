@@ -2,6 +2,7 @@ const db = require('../config/db');
 
 /**
  * Mengambil data gabungan dari users dan user_profiles
+ * Prioritas data: users table terlebih dahulu untuk fields yang ada di kedua table
  */
 const getProfileByUserId = async (userId) => {
     try {
@@ -9,10 +10,13 @@ const getProfileByUserId = async (userId) => {
         
         const query = `
             SELECT 
-                u.id, u.nama, u.email, u.npm, u.jurusan,
-                up.phone, up.alamat, up.bio, up.avatar_url,
-                up.tanggal_lahir, up.jenis_kelamin, up.tinggi_badan, up.berat_badan,
-                up.created_at, up.updated_at
+                u.id, u.nama, u.email, u.npm, u.jurusan, u.role,
+                u.bio, u.avatar_url, u.tanggal_lahir, u.jenis_kelamin, 
+                u.tinggi_badan, u.berat_badan,
+                COALESCE(up.phone, NULL) as phone,
+                COALESCE(up.alamat, NULL) as alamat,
+                COALESCE(up.created_at, u.created_at) as created_at,
+                COALESCE(up.updated_at, u.created_at) as updated_at
             FROM users u
             LEFT JOIN user_profiles up ON u.id = up.user_id
             WHERE u.id = $1

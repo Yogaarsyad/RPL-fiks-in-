@@ -43,8 +43,13 @@ function ProfilePage() {
     const fetchLatestProfile = async () => {
       try {
         const response = await getProfile();
+        console.log('🔄 Fetching profile on page load, response:', response);
+        
         if (response?.data) {
-          const apiData = response.data;
+          // PERBAIKAN: response.data adalah { success, data: {...profile} }
+          // Jadi kita perlu mengambil response.data.data, bukan response.data
+          const apiData = response.data.data || response.data;
+          console.log('✅ Profile data from API:', apiData);
           
           setProfile(prev => ({
             ...prev,
@@ -56,7 +61,9 @@ function ProfilePage() {
           
           // Update Local Storage
           const currentLocal = JSON.parse(localStorage.getItem('user') || '{}');
-          localStorage.setItem('user', JSON.stringify({ ...currentLocal, ...apiData }));
+          const mergedUser = { ...currentLocal, ...apiData };
+          localStorage.setItem('user', JSON.stringify(mergedUser));
+          console.log('💾 Updated localStorage with:', mergedUser);
           
           // Update Header Otomatis
           window.dispatchEvent(new Event('user-updated'));
@@ -122,32 +129,11 @@ function ProfilePage() {
       console.log('Response data:', response.data);
       console.log('Response structure:', JSON.stringify(response, null, 2));
 
-      // PERBAIKAN: Cek berbagai kemungkinan struktur response
-      let newAvatarUrl = null;
+      // Parse response - backend returns { success, message, data: { avatar_url, ... } }
+      const responseData = response?.data;
+      let newAvatarUrl = responseData?.data?.avatar_url;
       
-      // Kemungkinan 1: response.data.avatar_url
-      if (response?.data?.avatar_url) {
-        newAvatarUrl = response.data.avatar_url;
-      }
-      // Kemungkinan 2: response.avatar_url (tanpa .data)
-      else if (response?.avatar_url) {
-        newAvatarUrl = response.avatar_url;
-      }
-      // Kemungkinan 3: response.data.data.avatar_url (nested)
-      else if (response?.data?.data?.avatar_url) {
-        newAvatarUrl = response.data.data.avatar_url;
-      }
-      // Kemungkinan 4: response.data.user.avatar_url
-      else if (response?.data?.user?.avatar_url) {
-        newAvatarUrl = response.data.user.avatar_url;
-      }
-      // Kemungkinan 5: response.data.url atau response.data.path
-      else if (response?.data?.url) {
-        newAvatarUrl = response.data.url;
-      }
-      else if (response?.data?.path) {
-        newAvatarUrl = response.data.path;
-      }
+      console.log('📸 Avatar response structure:', { responseData, newAvatarUrl });
 
       if (newAvatarUrl) {
         console.log('New avatar URL found:', newAvatarUrl);
@@ -202,22 +188,39 @@ function ProfilePage() {
       const payload = {
         nama: profile.nama,
         email: profile.email,
-        phone: profile.phone,
-        alamat: profile.alamat,
-        bio: profile.bio,
-        tinggi_badan: parseInt(profile.tinggi_badan) || 0,
-        berat_badan: parseInt(profile.berat_badan) || 0,
+        phone: profile.phone || null,
+        alamat: profile.alamat || null,
+        bio: profile.bio || null,
+        tinggi_badan: profile.tinggi_badan ? parseInt(profile.tinggi_badan) : null,
+        berat_badan: profile.berat_badan ? parseInt(profile.berat_badan) : null,
       };
 
-      await updateProfile(payload);
+      console.log('📤 Sending payload:', payload);
+      const response = await updateProfile(payload);
+      console.log('📥 Full response:', response);
+      console.log('📥 response.data:', response?.data);
+      console.log('📥 response.data.data:', response?.data?.data);
       
+      // Update dengan data lengkap yang dikembalikan dari server
+      const updatedData = response?.data?.data || response?.data || {};
+      console.log('✅ Updated data from response:', updatedData);
+      
+      setProfile(prev => ({
+        ...prev,
+        ...updatedData
+      }));
+      
+      // Update localStorage dengan semua data yang dikembalikan server
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      localStorage.setItem('user', JSON.stringify({ ...user, ...payload }));
+      const newUser = { ...user, ...updatedData };
+      localStorage.setItem('user', JSON.stringify(newUser));
+      console.log('💾 Saved to localStorage:', newUser);
       
       window.dispatchEvent(new Event('user-updated'));
       alert("Profil berhasil disimpan!");
     } catch (error) {
       console.error("Update error:", error);
+      console.error("Error details:", error.response?.data || error.message);
       alert("Gagal menyimpan profil.");
     } finally {
       setSaving(false);
