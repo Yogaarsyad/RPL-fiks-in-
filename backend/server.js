@@ -4,74 +4,75 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-// --- HELPER: loadRouter ---
-// (Berfungsi untuk memuat router dan menangani export default/module.exports)
-function loadRouter(modulePath) {
-  let mod;
-  try {
-    mod = require(modulePath);
-  } catch (err) {
-    console.error(`Gagal require route "${modulePath}":`, err.message);
-    process.exit(1);
-  }
-  const router = (mod && mod.default) ? mod.default : mod;
-  // Validasi sederhana untuk memastikan router valid
-  if (!router || (typeof router !== 'function' && typeof router.use !== 'function')) {
-    console.error(`${modulePath} tidak mengekspor router Express yang valid.`);
-    // Pada production Vercel, lebih baik jangan process.exit(1) agar tidak crash total,
-    // tapi untuk keamanan debug kita log error saja.
-  }
-  return router;
-}
-
-// --- IMPORT ROUTES ---
-const userRoutes = loadRouter('./src/routes/userRoutes');
-const foodLogRoutes = loadRouter('./src/routes/foodLogRoutes');
-const sleepLogRoutes = loadRouter('./src/routes/sleepLogRoutes');
-const exerciseLogRoutes = loadRouter('./src/routes/exerciseLogRoutes');
-const reportRoutes = loadRouter('./src/routes/reportRoutes');
-const adminRoutes = loadRouter('./src/routes/adminRoutes'); 
-const chatRoutes = loadRouter('./src/routes/chatRoutes'); 
-const journalRoutes = require('./src/routes/journalRoutes'); // Menggunakan require biasa sesuai kode asli
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// --- 1. KONFIGURASI CORS (PENTING UNTUK VERCEL) ---
+// --- HELPER: loadRouter yang Lebih Aman ---
+// Menggunakan path.join agar terbaca benar di Vercel (Linux)
+function loadRouter(filename) {
+  try {
+    // Asumsi: folder routes ada di dalam 'src/routes' relatif terhadap server.js
+    // path.join(__dirname, 'src', 'routes', filename)
+    const fullPath = path.join(__dirname, 'src', 'routes', filename);
+    
+    const mod = require(fullPath);
+    const router = (mod && mod.default) ? mod.default : mod;
+
+    if (!router || (typeof router !== 'function' && typeof router.use !== 'function')) {
+      console.error(`⚠️ Peringatan: ${filename} tidak mengekspor router valid.`);
+      // Return router kosong agar tidak crash
+      return express.Router();
+    }
+    return router;
+  } catch (err) {
+    console.error(`❌ ERROR FATAL: Gagal memuat route '${filename}'`);
+    console.error(`   Pesan Error: ${err.message}`);
+    // Jangan process.exit(1) agar kita bisa lihat errornya di Log Vercel
+    return express.Router(); 
+  }
+}
+
+// --- 1. SETUP CORS ---
 const allowedOrigins = [
-  'http://localhost:3000',      // React Local
-  'http://localhost:5173',      // Vite Local
-  'http://localhost:5000',      // Backend Local
-  // -------------------------------------------------------------------------
-  // GANTI URL DI BAWAH INI DENGAN LINK FRONTEND VERCEL ANDA NANTI
-  // Contoh: 'https://lifemon-app.vercel.app'
-  'https://nama-project-frontend-kamu.vercel.app' 
-  // -------------------------------------------------------------------------
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5000',
+  // Ganti dengan URL Frontend Vercel Anda yang sebenarnya nanti
+  'https://lifemon-frontend-web.vercel.app', 
+  'https://web-rpl-16.vercel.app' 
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.indexOf(origin) === -1) {
-      // Jika origin tidak terdaftar, kita tetap izinkan dulu agar tidak error saat development/deploy awal.
-      // Nanti jika sudah production stable, Anda bisa ubah menjadi `return callback(new Error(...))`
-      return callback(null, true); 
+      // Izinkan sementara untuk debugging
+      return callback(null, true);
     }
     return callback(null, true);
   },
-  credentials: true, // Wajib true agar Cookies/Token login bisa lewat
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
 app.use(express.json());
 
 // --- 2. STATIC FILES ---
-// Catatan: Di Vercel, folder ini Read-Only. Upload file baru tidak akan tersimpan permanen.
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// --- 3. ROUTES MOUNTING ---
+// --- 3. IMPORT ROUTES ---
+// Pastikan nama file di dalam tanda kutip SAMA PERSIS (huruf besar/kecil) 
+// dengan nama file asli di folder src/routes Anda.
+const userRoutes = loadRouter('userRoutes');
+const foodLogRoutes = loadRouter('foodLogRoutes');
+const sleepLogRoutes = loadRouter('sleepLogRoutes');
+const exerciseLogRoutes = loadRouter('exerciseLogRoutes');
+const reportRoutes = loadRouter('reportRoutes');
+const adminRoutes = loadRouter('adminRoutes'); 
+const chatRoutes = loadRouter('chatRoutes'); 
+const journalRoutes = loadRouter('journalRoutes'); 
+
+// --- 4. ROUTES MOUNTING ---
 app.use('/api/users', userRoutes);
 app.use('/api/food-logs', foodLogRoutes);
 app.use('/api/sleep-logs', sleepLogRoutes);
@@ -81,19 +82,18 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes); 
 app.use('/api/journals', journalRoutes);
 
-// Route Default (Cek apakah server hidup)
+// Route Default (Health Check)
 app.get('/', (req, res) => {
-  res.send('API LifeMon Berjalan di Vercel...');
+  res.status(200).send('✅ API LifeMon Berjalan di Vercel (Mode Serverless)');
 });
 
-// --- 4. START SERVER (LOCAL) ---
-// Kode ini tetap berjalan di Local, tapi di Vercel akan di-bypass oleh module.exports
+// --- 5. START SERVER ---
+// Hanya jalankan listen jika di local (development)
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
       console.log(`🚀 Server LifeMon aktif di http://localhost:${PORT}`);
     });
 }
 
-// --- 5. EXPORT APP (WAJIB UNTUK VERCEL) ---
-// Vercel membutuhkan ini untuk mengubah Express menjadi Serverless Function
+// --- 6. EXPORT APP (WAJIB) ---
 module.exports = app;
